@@ -1,0 +1,835 @@
+set pc, :_start
+# z in the forth next instruction pointer
+# i is the next forth instruction pointer
+# j is the forth return stack pointer
+
+label :DOCOL
+begin
+  sub j, 1
+  set [j], i
+  add z, 1
+  set i, z
+end
+
+label :next
+begin
+  set z, [i]
+  add i, 1
+  set pc, [z]
+end
+
+
+defcode 'd' do
+  set a, a
+end
+
+defcode 'INTERPRET' do
+  set y, :interpret_word_buffer
+  jsr :_word
+  set [interpret_vars + 0], 0
+  set [interpret_vars + 1], a   # length
+  set [interpret_vars + 2], b   # pointer
+  jsr :_find
+  ife a, 0
+  set pc, :interpret_lit
+
+  set [interpret_vars + 3], a
+
+  add a, 1
+  set [interpret_vars + 4], [a] # push the lenght/mask word
+  set a, [interpret_vars + 3]
+  jsr :_tcfa
+  set [interpret_vars + 3], a
+  set b, [interpret_vars + 4]   # get the length/mask word
+  and_ b, IMMEDIATE_MASK
+  ifn b, 0
+  set pc, :interpret_exec
+  set pc, :interpret_exec_or_compile
+
+  label :interpret_vars
+  dat 0                         # is_literal (0)
+  dat 0                         # word length (1)
+  dat 0                         # word buffer (2)
+  dat 0                         # dictionary_entry (3)
+  dat 0                         # word length/mask (4)
+  dat 0                         # literal (5)
+  dat 0                         #
+
+  label :interpret_lit
+  set a, [interpret_vars + 1]
+  set x, [interpret_vars + 2]
+  jsr :_number
+  ifn a, 0
+  set pc, :interpret_error
+  set [interpret_vars + 3], :LIT
+
+  # b is the lit number at this point
+  set [interpret_vars + 0], 1
+  set [interpret_vars + 5], b
+
+  label :interpret_exec_or_compile
+  set a, [var_STATE]
+  ife a, 0                      # if executing
+  set pc, :interpret_exec
+
+
+  set a, [interpret_vars + 3]   # compiling
+  jsr :_comma
+  ife [interpret_vars + 0], 0   # not literal
+  set pc, :next
+  set a, [interpret_vars + 5]   # get the literal
+  jsr :_comma                   # and compile it
+  set pc, :next
+
+  label :interpret_exec
+  ifn [interpret_vars + 0], 0
+  set pc, :interpret_push_lit
+  set z, [interpret_vars + 3]
+  set pc, [z]
+
+  label :interpret_push_lit
+  set push, b
+  set pc, :next
+
+  label :interpret_error
+end
+
+label :interpret_word_buffer
+space(32)
+
+defcode 'NUMBER' do
+  set a, pop                    # length
+  set x, pop                    # pointer
+  jsr :_number
+  set push, b
+  set push, a
+end
+
+# x points to buffer
+# a length
+# result in b
+# a will be the number of unconverted chars
+
+defsubr '_number' do
+  set b, 0
+  set push, 1
+  ifn [x], -'-'
+  set pc, :_number_loop
+  set peek, -1 & 0xffff
+  sub a, 1
+  add x, 1
+  label :_number_loop
+  ife a, 0
+  set pc, :_number_finish
+
+  set c, [x]
+  add x, 1
+
+  sub c, '0'.ord
+  ifg 0, c                      # c < 0 error
+  set pc, :_number_finish
+  ifg c, 10
+  sub c, 'A'.ord - '0'.ord - 10
+  ifg c, 35
+  sub c, 'a'.ord - 'A'.ord
+  ifg c, 35
+  set pc, :_number_finish
+  ifg [var_BASE], c
+  set pc, :_number_calc
+  set pc, :_number_finish
+
+  label :_number_calc
+  sub a, 1
+  mul b, [var_BASE]
+  add b, c
+  set pc, :_number_loop
+
+  label :_number_finish
+  mul b, pop
+end
+
+defcode 'WORD' do
+  set y, wordbuf
+  jsr :_word
+  set push, b
+  set push, a
+end
+
+
+# input
+#  y pointer to buffer to fill w/ word
+# output
+#  a length
+#  b buffer
+defsubr '_word' do
+  set push, y                   # save the buffer pointer
+  set [:_word_count], 0
+
+  label :word_skip
+  jsr :_getc
+  jsr :_upcase
+  ife a, -' '
+  set pc, :word_skip
+  ife a, -"\r"
+  set pc, :word_skip
+  ife a, -'\\'
+  set pc, :word_eol
+
+  label :word_loop
+  set [y], a
+  add y, 1
+  add [:_word_count], 1
+  jsr :_getc
+  jsr :_upcase
+  ife a, -' '
+  set pc, :word_exit
+  ife a, -"\r"
+  set pc, :word_exit
+  set pc, :word_loop
+
+  label :word_eol
+  jsr :_getc
+  jsr :_upcase
+  ifn a, -"\r"
+  set pc, :word_eol
+  set pc, :word_skip
+
+  label :word_exit
+  set a, [:_word_count]
+  set b, pop                    # return the original pointer
+end
+
+label :_word_count
+dat 0
+
+space(32, wordbuf)
+
+defcode 'KEY' do
+  jsr :_getc
+  set push, a
+end
+
+defsubr :_key_block do
+  jsr :_key
+  ife a, 0
+  set pc, :_key_block
+end
+
+# defsubr :_key do
+#   set x, [var_NEXTCHAR]
+#   set a, [x]
+#   ife a, 0
+#   set pc, pop
+#   set [x], 0
+#   add [var_NEXTCHAR], 1
+# end
+
+defcode 'LITSTRING' do
+  set a, [i]
+  add i, 1
+  set push, i
+  add i, a
+  set push, a
+end
+
+defcode 'BREAK' do
+  set a, peek
+end
+
+defcode 'FIND' do
+  set a, pop                    # length
+  set b, pop                    # string
+  jsr :_find
+  set push, a
+end
+
+# input
+#  a length
+#  b ptr to string
+# output
+#  a dictionary entry
+defsubr :_find do
+  set y, b
+  set x, var_LATEST
+  set push, x
+
+  label :find_next
+  set x, peek
+  set x, [x]
+  set peek, x
+
+  ife x, 0
+  set pc, :find_exit
+  add x, 1
+  set c, [x]
+  and_ c, LENGTH_MASK | HIDDEN_MASK
+  ifn c, a
+  set pc, :find_next
+  add x, 1
+  set b, y
+
+  label :find_cloop
+  ife a, 0
+  set pc, :find_exit
+  ifn [b], [x]
+  set pc, :find_next
+  sub a, 1
+  add x, 1
+  add b, 1
+  set pc, :find_cloop
+
+  label :find_exit
+  set a, pop
+end
+
+defcode 'EXIT' do
+  set i, [j]
+  add j, 1
+end
+
+defcode 'DUP' do
+  set a, peek
+  set push, a
+end
+
+defcode 'SWAP' do
+  set a, pop
+  set b, pop
+  set push, a
+  set push, b
+end
+
+defcode 'DROP' do
+  set a, pop
+end
+
+defcode 'OVER' do
+  set x, sp
+  set a, [x + 1]
+  set push, a
+end
+
+defcode 'ROT' do
+  set a, pop
+  set b, pop
+  set c, pop
+  set push, b
+  set push, a
+  set push, c
+end
+
+defcode '-ROT', 'NROT' do
+  set a, pop
+  set b, pop
+  set c, pop
+  set push, a
+  set push, c
+  set push, b
+end
+
+defcode '2DROP', 'TWODROP' do
+  set a, pop
+  set a, pop
+end
+
+defcode '2DUP', 'TWODUP' do
+  set a, pop
+  set b, peek
+  set push, a
+  set push, b
+  set push, a
+end
+
+defcode '2SWAP', 'TWOSWAP' do
+  set a, pop
+  set b, pop
+  set c, pop
+  set x, pop
+  set push, b
+  set push, a
+  set push, x
+  set push, c
+end
+
+defcode '?DUP', 'QDUP' do
+  set a, peek
+  ifn a, 0
+  set push, a
+end
+
+defcode '1+', 'INCR' do
+  add peek, 1
+end
+
+defcode '1-', 'DECR' do
+  sub peek, 1
+end
+
+defcode '+', 'FADD' do
+  set a, pop
+  add peek, a
+end
+
+defcode '-', 'FSUB' do
+  set a, pop
+  sub peek, a
+end
+
+defcode '*', 'FMUL' do
+  set a, pop
+  mul peek, a
+end
+
+defcode '/MOD', 'DIVMOD' do
+  set a, pop
+  set b, pop
+  set push, a
+  mod peek, b
+  set push, a
+  div peek, b
+end
+
+defcode '=', 'EQ' do
+  set a, pop
+  set b, pop
+  set push, 0
+  ife a, b
+  set peek, 1
+end
+
+defcode '<>', 'NEQ' do
+  set a, pop
+  set b, pop
+  set push, 1
+  ife a, b
+  set peek, 0
+end
+
+
+defcode '<', 'LT' do
+  set b, pop
+  set a, pop
+  set push, 0
+  ifg a, b
+  set peek, 1
+end
+
+defcode '>', 'GT' do
+  set b, pop
+  set a, pop
+  set push, 0
+  ifg b, a
+  set peek, 1
+end
+
+defcode '<=', 'LE' do
+  set b, pop
+  set a, pop
+  set push, 1
+  ifg b, a
+  set peek, 0
+end
+
+defcode '>=', 'GE' do
+  set b, pop
+  set a, pop
+  set push, 1
+  ifg a, b
+  set peek, 0
+end
+
+defcode '0=', 'ZEQ' do
+  set a, pop
+  set push, 0
+  ife a, 0
+  set peek, 1
+end
+
+defcode '0<>', 'ZNEQ' do
+  set a, pop
+  set push, 1
+  ife a, 0
+  set peek, 0
+end
+
+defcode '0<', 'ZLT' do
+  set a, pop
+  set push, 0
+  ifg 0, a
+  set peek, 1
+end
+
+defcode '0>', 'ZGT' do
+  set a, pop
+  set push, 0
+  ifg a, 0
+  set peek, 1
+end
+
+defcode '0<=', 'ZLE' do
+  set a, pop
+  set push, 1
+  ifg a, 0
+  set peek, 0
+end
+
+defcode '0>=', 'ZGE' do
+  set a, pop
+  set push, 1
+  ifg 0, a
+  set peek, 0
+end
+
+defcode 'AND', 'FAND' do
+  set a, pop
+  and_ peek, a
+end
+
+defcode 'OR' do
+  set a, pop
+  bor peek, a
+end
+
+defcode 'XOR', 'FXOR' do
+  set a, pop
+  xor peek, a
+end
+
+defcode 'INVERT' do
+  xor peek, 0xffff
+end
+
+defcode 'LIT' do
+  set a, [i]
+  add i, 1
+  set push, a
+end
+
+defcode '!', 'STORE' do
+  set x, pop
+  set a, pop
+  set [x], a
+end
+
+defcode '@', 'FETCH' do
+  set x, pop
+  set push, [x]
+end
+
+defcode '+!', 'ADDSTORE' do
+  set x, pop
+  set a, pop
+  add [x], a
+end
+
+defcode '-!', 'SUBSTORE' do
+  set x, pop
+  set a, pop
+  sub [x], a
+end
+
+defvar "base", 10
+defvar 'state', 0
+defvar "s0"
+defvar "here", :text_end
+
+defcode '>R', 'TOR' do
+  set a, pop
+  sub j, 1
+  set j, a
+end
+
+defcode 'R>', 'FROMR' do
+  set a, j
+  add j, 1
+  set push, a
+end
+
+defcode 'RDROP' do
+  add j, 1
+end
+
+defcode 'RSP@', 'RSPFETCH' do
+  set push, j
+end
+
+defcode 'RSP!', 'RSPSTORE' do
+  set j, pop
+end
+
+defcode '>CFA', 'TCFA' do
+  set a, pop
+  jsr :_tcfa
+  set push, a
+end
+
+# i/o a
+defsubr :_tcfa do
+  add a, 1
+  set b, [a]
+  add a, 1
+  and_ b, LENGTH_MASK
+  add a, b
+end
+
+defword '>dfa', :lab => 'tdfa' do
+  w tcfa
+  w incr
+end
+
+defcode 'CREATE' do
+  set a, pop
+  set b, pop
+  set x, [var_HERE]
+  set [x], [var_LATEST]
+  set [var_LATEST], x # update latest
+  add x, 1
+  set [x], a
+  add x, 1
+
+  label :create_cloop
+  ife a, 0
+  set pc, :create_cloop_end
+  set [x], [b]
+  sub a, 1
+  add x, 1
+  add b, 1
+  set pc, :create_cloop
+  label :create_cloop_end
+
+  set [var_HERE], x
+end
+
+
+defcode ',', 'COMMA' do
+  set a, pop
+  jsr :_comma
+end
+
+defsubr :_comma do
+  set b, [var_HERE]
+  set [b], a
+  add [var_HERE], 1
+end
+
+defcode '[', :lab => 'LBRAC', :flags => IMMEDIATE_MASK do
+  set [var_STATE], 0
+end
+
+defcode ']', 'RBRAC' do
+  set [var_STATE], 1
+end
+
+defword ':', :lab => 'COLON' do
+  w word
+  w create
+  w lit, docol, comma
+  w latest, fetch, hidden
+  w rbrac
+end
+
+defcode emit do
+  set a, pop
+  jsr :_echo
+end
+
+defword ';', :lab => 'SEMICOLON', :flags => IMMEDIATE_MASK do
+  w lit, exit_, comma
+  w latest, fetch, hidden
+  w lbrac
+end
+
+defcode 'IMMEDIATE', :flags => IMMEDIATE_MASK do
+  set x, [var_LATEST]
+  add x, 1
+  set a, [x]
+  bor a, IMMEDIATE_MASK
+  set [x], a
+end
+
+defcode 'HIDDEN' do
+  set x, pop
+  add x, 1
+  set a, [x]
+  xor a, HIDDEN_MASK
+  set [x], a
+end
+
+defword 'hide' do
+  w word
+  w find
+  w hidden
+end
+
+defcode "'", 'TICK' do
+  set push, i
+  add i, 1
+end
+
+defcode 'BRANCH' do
+  set a, [i]
+  add a, 1
+  add i, a
+end
+
+defcode '0BRANCH', 'ZBRANCH' do
+  set a, peek
+  set b, [i]
+  add i, 1
+  ife a, 0
+  add i, b
+end
+
+defconst "R0", 0x7000, :lab => 'rz'
+
+defword 'quit' do
+  w rz, rspstore
+  w interpret
+  w branch, -3 & 0xffff
+end
+
+defsubr :_ram_test do
+  jsr :_getc
+  set pc, :_ram_test
+end
+
+defsubr :_getc, :saves => [y] do
+  ifg [:var_GETC_BUFFER_LIMIT], [:var_GETC_BUFFER_NEXTCHAR]
+  set pc, :_getc_skip_read
+
+  set y, :_getc_buffer
+  jsr :_read_line
+  set [:var_GETC_BUFFER_LIMIT], y
+  set [:var_GETC_BUFFER_NEXTCHAR], :_getc_buffer
+
+  label :_getc_skip_read
+  set y, [:var_GETC_BUFFER_NEXTCHAR]
+  set a, [y]
+  add [:var_GETC_BUFFER_NEXTCHAR], 1
+end
+
+# buffer_end => y
+# b => line_length
+# munges a, b, x, y
+defsubr :_read_line do
+  set b, 0
+  label :_read_line_next
+  jsr :_key
+  ife a, 0
+  set pc, :_read_line_next
+  jsr :_echo
+  ifn a, -"\b"
+  set pc, :_read_line_skip_bs
+  ife b, 0
+  set pc, :_read_line_next
+  sub b, 1
+  sub y, 1
+  set pc, :_read_line_next
+
+  label :_read_line_skip_bs
+  set [y], a
+  add b, 1
+  add y, 1
+  ifn a, -"\r"
+  set pc, :_read_line_next
+end
+
+# 0 or <next-char>  => a
+# munges x
+defsubr :_key do
+  set x, [var_NEXTCHAR]
+  set a, [x]
+  ife a, 0
+  set pc, pop
+  and_ a, 0x7f
+  set [x], 0
+  add x, 1
+  and_ x, 0xffef
+  set [var_NEXTCHAR], x
+end
+
+defsubr _upcase do
+  ifg 0x61, a
+  set pc, pop
+  ifg a, 0x7a
+  set pc, pop
+  sub a, 0x20
+end
+
+# a => character to echo on screen
+# b => line-length
+# munges: x
+defsubr '_echo' do
+  set x, [var_NEXTOUT]
+
+  ifn a, -"\r"
+  set pc, :echo_skip_nl
+  set [x], 0
+  add x, 32
+  and_ x, 0xffe0
+  set pc, :_echo_finish
+
+  label :echo_skip_nl
+  ifn a, -"\b"
+  set pc, :echo_skip_bs
+  ife b, 0
+  set pc, pop
+  set [x], 0
+  sub x, 1
+  set pc, :_echo_finish
+
+  label :echo_skip_bs
+  bor a, 0xf000
+  set [x], a
+  add x, 1
+  label :_echo_finish
+  ifg x, 0x817f
+  jsr :_scroll
+  and_ a, 0x7f
+  set [var_NEXTOUT], x
+  set [x], 0x809c
+end
+
+defsubr '_scroll' do
+  set x, 0x8000
+  label :_scroll_loop1
+  set [x], [x + 32]
+  add x, 1
+  ifg 0x8160, x
+  set pc, :_scroll_loop1
+
+  label :_scroll_loop2
+  set [x], 0
+  add x, 1
+  ifg 0x8180, x
+  set pc, :_scroll_loop2
+  set x, 0x8160
+end
+
+defvar 'nextchar', 0x9000
+defvar 'nextout', 0x8000
+
+defvar 'getc_buffer_limit', :_getc_buffer
+defvar 'getc_buffer_nextchar', :_getc_buffer
+
+# this has to be last
+defvar "latest", name_LATEST
+
+label :_getc_buffer
+space(256)
+
+label :_start
+begin
+  set [var_S0], sp
+  set j, 0x7000
+  set i, :_cold_start
+  set pc, :next
+end
+
+label :_cold_start
+w :quit
+
+label :text_start
+dat '": double dup + ; 5 double "'
+dat 0
+label :text_end
