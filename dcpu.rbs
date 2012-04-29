@@ -405,7 +405,7 @@ defcode '<', 'LT' do
   set b, pop
   set a, pop
   set push, 0
-  ifg b, a
+  ifu a, b
   set peek, 1
 end
 
@@ -414,7 +414,7 @@ defcode '>', 'GT' do
   set b, pop
   set a, pop
   set push, 0
-  ifg a, b
+  ifu b, a
   set peek, 1
 end
 
@@ -423,7 +423,7 @@ defcode '<=', 'LE' do
   set b, pop
   set a, pop
   set push, 1
-  ifg a, b
+  ifa a, b
   set peek, 0
 end
 
@@ -432,7 +432,7 @@ defcode '>=', 'GE' do
   set b, pop
   set a, pop
   set push, 1
-  ifg b, a
+  ifa b, a
   set peek, 0
 end
 
@@ -454,28 +454,28 @@ end
 defcode '0<', 'ZLT' do
   set a, pop
   set push, 0
-  ifg 0, a
+  ifu a, 0
   set peek, 1
 end
 
 defcode '0>', 'ZGT' do
   set a, pop
   set push, 0
-  ifg a, 0
+  ifa a, 0
   set peek, 1
 end
 
 defcode '0<=', 'ZLE' do
   set a, pop
   set push, 1
-  ifg a, 0
+  ifa a, 0
   set peek, 0
 end
 
 defcode '0>=', 'ZGE' do
   set a, pop
   set push, 1
-  ifg 0, a
+  ifu a, 0
   set peek, 0
 end
 
