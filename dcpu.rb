@@ -21,6 +21,7 @@ class Emit
   LENGTH_MASK = 0x1f
   HIDDEN_MASK = 0x20
   IMMEDIATE_MASK = 0x40
+  KBD_CR = 0x11
 
   def initialize
     @code = []
@@ -78,7 +79,7 @@ class Emit
       line.gsub!(/\s{2,}/, ' ')
       dquote = '"'.ord.to_s
       line.gsub!(/"/, "\", #{dquote}, \"")
-      code << %(dat "#{line}", #{"\r".ord})
+      code << %(dat "#{line}", #{KBD_CR})
     end
   end
 

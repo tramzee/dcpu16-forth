@@ -1,3 +1,7 @@
+HW_KEYBOARD = 1
+HW_SCREEN = 2
+KBD_BS = 0x10
+
 set pc, :_start
 # z in the forth next instruction pointer
 # i is the next forth instruction pointer
@@ -176,7 +180,7 @@ defsubr '_word' do
   jsr :_upcase
   ife a, -' '
   set pc, :word_skip
-  ife a, -"\r"
+  ife a, KBD_CR
   set pc, :word_skip
   ife a, -'\\'
   set pc, :word_eol
@@ -189,14 +193,14 @@ defsubr '_word' do
   jsr :_upcase
   ife a, -' '
   set pc, :word_exit
-  ife a, -"\r"
+  ife a, KBD_CR
   set pc, :word_exit
   set pc, :word_loop
 
   label :word_eol
   jsr :_getc
   jsr :_upcase
-  ifn a, -"\r"
+  ifn a, KBD_CR
   set pc, :word_eol
   set pc, :word_skip
 
@@ -723,42 +727,36 @@ end
 
 # buffer_end => y
 # b => line_length
-# munges a, b, x, y
+# munges a, b, c, x, y
 defsubr :_read_line do
-  set b, 0
+  set b, 0                      # set the number of characters read into buffer
   label :_read_line_next
-  jsr :_key
+  jsr :_key                     # get (non-blocking) character
   ife a, 0
-  set pc, :_read_line_next
-  jsr :_echo
-  ifn a, -"\b"
+  set pc, :_read_line_next      # if none loop
+  jsr :_echo                    # echo it to the screen
+  ifn a, KBD_BS                 # if it is a backspace
   set pc, :_read_line_skip_bs
-  ife b, 0
+  ife b, 0                      # and we have some characters in the buffer
   set pc, :_read_line_next
-  sub b, 1
+  sub b, 1                      # backup the buffer
   sub y, 1
   set pc, :_read_line_next
 
   label :_read_line_skip_bs
-  set [y], a
+  set [y], a                    # add this character to the buffer
   add b, 1
   add y, 1
-  ifn a, -"\r"
+  ifn a, KBD_CR                 # quit when we get a CR
   set pc, :_read_line_next
 end
 
 # 0 or <next-char>  => a
-# munges x
+# munges c, x
 defsubr :_key do
-  set x, [var_NEXTCHAR]
-  set a, [x]
-  ife a, 0
-  set pc, pop
-  and_ a, 0x7f
-  set [x], 0
-  add x, 1
-  and_ x, 0xffef
-  set [var_NEXTCHAR], x
+  set a, 1
+  hwi HW_KEYBOARD
+  set a, c
 end
 
 defsubr _upcase do
@@ -775,7 +773,7 @@ end
 defsubr '_echo' do
   set x, [var_NEXTOUT]
 
-  ifn a, -"\r"
+  ifn a, KBD_CR
   set pc, :echo_skip_nl
   set [x], 0
   add x, 32
@@ -783,7 +781,7 @@ defsubr '_echo' do
   set pc, :_echo_finish
 
   label :echo_skip_nl
-  ifn a, -"\b"
+  ifn a, KBD_BS
   set pc, :echo_skip_bs
   ife b, 0
   set pc, pop
@@ -833,6 +831,9 @@ space(256)
 
 label :_start
 begin
+  jsr :_setup_screen
+  jsr :_setup_kbd
+
   set push, 0
   set [var_S0], sp
   set j, 0x7000
@@ -840,13 +841,25 @@ begin
   set pc, :next
 end
 
+defsubr :_setup_kbd do
+  set a, 0
+  hwi HW_KEYBOARD
+end
+
+defsubr :_setup_screen do
+  set a, 0
+  set b, [var_NEXTOUT]
+  hwi HW_SCREEN
+end
+
+
 label :_cold_start
 w :quit
 
 label :text_start
 
 forth %(
-: '\\n' #{"\r".ord} ;
+: '\\n' #{KBD_CR} ;
 : BL #{' '.ord} ;
 : CR '\\n' EMIT ;
 : SPACE BL EMIT ;
