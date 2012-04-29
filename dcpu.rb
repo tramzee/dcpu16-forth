@@ -28,7 +28,9 @@ class Emit
 
   def method_missing(m, *args)
     if args.length > 0
-      code.push "#{m.to_s.sub(/^(.*?)_*$/, '\1')} " + args.collect {|a| e(a)}.join(", ")
+      m = m.to_s
+      code.push "#{m.sub(/^(.*?)_*$/, '\1')} " + args.collect {|a| e(a)}.join(", ")
+      yield if m.to_s =~ /^if/ && block_given?
     else
       EString.new(m.to_s.sub(/^(.*?)_*$/, '\1'))
     end
@@ -69,6 +71,15 @@ class Emit
 
   def w(*n)
     code << "dat #{n.join(', ').upcase}"
+  end
+
+  def forth(s)
+    s.split(/\s*\n\s*/).each do |line|
+      line.gsub!(/\s{2,}/, ' ')
+      dquote = '"'.ord.to_s
+      line.gsub!(/"/, "\", #{dquote}, \"")
+      code << %(dat "#{line}", #{"\r".ord})
+    end
   end
 
   def defsubr(name, opts = {})
@@ -158,7 +169,7 @@ class Emit
   end
 
   def emit
-    code.join("\n        ").gsub(/^\s*:/, ':')
+    code.join("\n        ").gsub(/^\s*:/, ':').gsub(/(^\s*if.*\n)/, '\1  ')
   end
 
 end

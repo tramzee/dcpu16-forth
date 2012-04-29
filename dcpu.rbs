@@ -29,65 +29,71 @@ defcode 'INTERPRET' do
   set [interpret_vars + 0], 0
   set [interpret_vars + 1], a   # length
   set [interpret_vars + 2], b   # pointer
-  jsr :_find
-  ife a, 0
-  set pc, :interpret_lit
+  jsr :_find                    # find the dictionary entry
+  ife a, 0 do                   # if we cant find it
+    set pc, :interpret_lit      # check to see if it is a literal
+  end
+  # otherwise get the codeword
+  set [interpret_vars + 3], a       # save the dictionary entry
+  set [interpret_vars + 4], [a + 1] # save the lenght/mask word
+  jsr :_tcfa                        # get the codeword
+  set [interpret_vars + 3], a       # and save it
+  set b, [interpret_vars + 4]       # get the length/mask word
 
-  set [interpret_vars + 3], a
-
-  add a, 1
-  set [interpret_vars + 4], [a] # push the lenght/mask word
-  set a, [interpret_vars + 3]
-  jsr :_tcfa
-  set [interpret_vars + 3], a
-  set b, [interpret_vars + 4]   # get the length/mask word
   and_ b, IMMEDIATE_MASK
-  ifn b, 0
-  set pc, :interpret_exec
-  set pc, :interpret_exec_or_compile
+  ifn b, 0 do                   # if this is immediate
+    set pc, :interpret_exec     # go straight to execute
+  end
+
+  set pc, :interpret_exec_or_compile # otherwise check to see if we are compiling or executing
 
   label :interpret_vars
   dat 0                         # is_literal (0)
   dat 0                         # word length (1)
   dat 0                         # word buffer (2)
-  dat 0                         # dictionary_entry (3)
+  dat 0                         # dictionary_entry/codeword (3)
   dat 0                         # word length/mask (4)
   dat 0                         # literal (5)
   dat 0                         #
 
+  # check to see if this is a literal
   label :interpret_lit
-  set a, [interpret_vars + 1]
-  set x, [interpret_vars + 2]
-  jsr :_number
-  ifn a, 0
-  set pc, :interpret_error
-  set [interpret_vars + 3], :LIT
-
-  # b is the lit number at this point
-  set [interpret_vars + 0], 1
-  set [interpret_vars + 5], b
+  set a, [interpret_vars + 1]   # get the length
+  set x, [interpret_vars + 2]   # get the buffer
+  jsr :_number                  # check to see if it is a number (returned in b)
+  ifn a, 0 do                   # if not (a == number of charaters *not* converted)
+    set pc, :interpret_error    # then we don't know what this is
+  end
+  set [interpret_vars + 3], :LIT # if it is a number then set the codeword to LIT
+  set [interpret_vars + 0], 1   # and mark this as a literal
+  set [interpret_vars + 5], b   # and save the number
 
   label :interpret_exec_or_compile
-  set a, [var_STATE]
-  ife a, 0                      # if executing
-  set pc, :interpret_exec
+  set a, [var_STATE]            # check compiling or executing
+  ife a, 0 do                   # if executing
+    set pc, :interpret_exec
+  end
 
-
+  # compiling
   set a, [interpret_vars + 3]   # compiling
-  jsr :_comma
-  ife [interpret_vars + 0], 0   # not literal
-  set pc, :next
-  set a, [interpret_vars + 5]   # get the literal
+  jsr :_comma                   # store the codeword
+  ife [interpret_vars + 0], 0 do # not literal
+    set pc, :next                # we are finished
+  end
+
+  set a, [interpret_vars + 5]   # if it is literal then get the literal
   jsr :_comma                   # and compile it
   set pc, :next
 
   label :interpret_exec
-  ifn [interpret_vars + 0], 0
-  set pc, :interpret_push_lit
-  set z, [interpret_vars + 3]
+  ifn [interpret_vars + 0], 0 do # if literal
+    set pc, :interpret_push_lit
+  end
+
+  set z, [interpret_vars + 3]   # otherwise execute the codeword (just like next)
   set pc, [z]
 
-  label :interpret_push_lit
+  label :interpret_push_lit     # if it's a literal just push it and go to next
   set push, b
   set pc, :next
 
@@ -209,21 +215,6 @@ defcode 'KEY' do
   set push, a
 end
 
-defsubr :_key_block do
-  jsr :_key
-  ife a, 0
-  set pc, :_key_block
-end
-
-# defsubr :_key do
-#   set x, [var_NEXTCHAR]
-#   set a, [x]
-#   ife a, 0
-#   set pc, pop
-#   set [x], 0
-#   add [var_NEXTCHAR], 1
-# end
-
 defcode 'LITSTRING' do
   set a, [i]
   add i, 1
@@ -269,11 +260,11 @@ defsubr :_find do
   set b, y
 
   label :find_cloop
-  ife a, 0
+  ife c, 0
   set pc, :find_exit
   ifn [b], [x]
   set pc, :find_next
-  sub a, 1
+  sub c, 1
   add x, 1
   add b, 1
   set pc, :find_cloop
@@ -381,9 +372,8 @@ defcode '*', 'FMUL' do
 end
 
 defcode '/MOD', 'DIVMOD' do
-  set a, pop
   set b, pop
-  set push, a
+  set a, peek
   mod peek, b
   set push, a
   div peek, b
@@ -400,41 +390,45 @@ end
 defcode '<>', 'NEQ' do
   set a, pop
   set b, pop
-  set push, 1
-  ife a, b
-  set peek, 0
+  set push, 0
+  ifn a, b
+  set peek, 1
 end
 
 
+# true if a < b
 defcode '<', 'LT' do
   set b, pop
   set a, pop
   set push, 0
-  ifg a, b
+  ifg b, a
   set peek, 1
 end
 
+# true if a > b
 defcode '>', 'GT' do
   set b, pop
   set a, pop
   set push, 0
-  ifg b, a
+  ifg a, b
   set peek, 1
 end
 
+# true if a <= b
 defcode '<=', 'LE' do
   set b, pop
   set a, pop
   set push, 1
-  ifg b, a
+  ifg a, b
   set peek, 0
 end
 
+# true if a >= b
 defcode '>=', 'GE' do
   set b, pop
   set a, pop
   set push, 1
-  ifg a, b
+  ifg b, a
   set peek, 0
 end
 
@@ -447,11 +441,12 @@ end
 
 defcode '0<>', 'ZNEQ' do
   set a, pop
-  set push, 1
-  ife a, 0
-  set peek, 0
+  set push, 0
+  ifn a, 0
+  set peek, 1
 end
 
+# true if a < 0
 defcode '0<', 'ZLT' do
   set a, pop
   set push, 0
@@ -532,6 +527,17 @@ defvar "base", 10
 defvar 'state', 0
 defvar "s0"
 defvar "here", :text_end
+
+
+defcode "DSP@", 'DSPFETCH' do
+  set a, sp
+  set push, a
+end
+
+defcode "DSP!", 'DSPSTORE' do
+  set a, pop
+  set sp, a
+end
 
 defcode '>R', 'TOR' do
   set a, pop
@@ -628,7 +634,7 @@ defword ':', :lab => 'COLON' do
   w rbrac
 end
 
-defcode emit do
+defcode 'emit' do
   set a, pop
   jsr :_echo
 end
@@ -661,20 +667,27 @@ defword 'hide' do
   w hidden
 end
 
+defcode 'char' do
+  jsr :_word
+  # a = length, b = buffer
+  set push, [b]
+end
+
+
 defcode "'", 'TICK' do
-  set push, i
+  set push, [i]
   add i, 1
 end
 
 defcode 'BRANCH' do
   set a, [i]
-  add a, 1
   add i, a
 end
 
 defcode '0BRANCH', 'ZBRANCH' do
-  set a, peek
+  set a, pop
   set b, [i]
+  sub b, 1
   add i, 1
   ife a, 0
   add i, b
@@ -685,7 +698,7 @@ defconst "R0", 0x7000, :lab => 'rz'
 defword 'quit' do
   w rz, rspstore
   w interpret
-  w branch, -3 & 0xffff
+  w branch, -2 & 0xffff
 end
 
 defsubr :_ram_test do
@@ -809,8 +822,8 @@ end
 defvar 'nextchar', 0x9000
 defvar 'nextout', 0x8000
 
-defvar 'getc_buffer_limit', :_getc_buffer
-defvar 'getc_buffer_nextchar', :_getc_buffer
+defvar 'getc_buffer_limit', :text_end
+defvar 'getc_buffer_nextchar', :text_start
 
 # this has to be last
 defvar "latest", name_LATEST
@@ -820,6 +833,7 @@ space(256)
 
 label :_start
 begin
+  set push, 0
   set [var_S0], sp
   set j, 0x7000
   set i, :_cold_start
@@ -830,6 +844,184 @@ label :_cold_start
 w :quit
 
 label :text_start
-dat '": double dup + ; 5 double "'
-dat 0
+
+forth %(
+: '\\n' #{"\r".ord} ;
+: BL #{' '.ord} ;
+: CR '\\n' EMIT ;
+: SPACE BL EMIT ;
+: NEGATE 0 SWAP - ;
+: TRUE  1 ;
+: FALSE 0 ;
+: NOT   0= ;
+
+: LITERAL IMMEDIATE
+        \' LIT ,        \\ compile LIT
+        ,               \\ compile the literal itself from the stack
+        ;
+
+: ':'
+        [               \\ go into immediate mode (temporarily)
+        CHAR :          \\ push the number 58 (ASCII code of colon) on the parameter stack
+        ]               \\ go back to compile mode
+        LITERAL         \\ compile LIT 58 as the definition of ':' word
+;
+
+: ';' [ CHAR ; ] LITERAL ;
+: '(' [ CHAR ( ] LITERAL ;
+: ')' [ CHAR ) ] LITERAL ;
+: '\"' [ CHAR \" ] LITERAL ;
+: 'A' [ CHAR A ] LITERAL ;
+: '0' [ CHAR 0 ] LITERAL ;
+: '-' [ CHAR - ] LITERAL ;
+: '.' [ CHAR . ] LITERAL ;
+
+: [COMPILE] IMMEDIATE
+        WORD            \\ get the next word
+        FIND            \\ find it in the dictionary
+        >CFA            \\ get its codeword
+        ,               \\ and compile that
+;
+
+: RECURSE IMMEDIATE
+        LATEST @        \\ LATEST points to the word being compiled at the moment
+        >CFA            \\ get the codeword
+        ,               \\ compile it
+;
+
+: IF IMMEDIATE
+        \' 0BRANCH ,    \\ compile 0BRANCH
+        HERE @          \\ save location of the offset on the stack
+        0 ,             \\ compile a dummy offset
+;
+
+: THEN IMMEDIATE
+        DUP
+        HERE @ SWAP -   \\ calculate the offset from the address saved on the stack
+        SWAP !          \\ store the offset in the back-filled location
+;
+
+: ELSE IMMEDIATE
+        \' BRANCH ,     \\ definite branch to just over the false-part
+        HERE @          \\ save location of the offset on the stack
+        0 ,             \\ compile a dummy offset
+        SWAP            \\ now back-fill the original (IF) offset
+        DUP             \\ same as for THEN word above
+        HERE @ SWAP -
+        SWAP !
+;
+
+: BEGIN IMMEDIATE
+        HERE @          \\ save location on the stack
+;
+
+: UNTIL IMMEDIATE
+        \' 0BRANCH ,    \\ compile 0BRANCH
+        HERE @ -        \\ calculate the offset from the address saved on the stack
+        ,               \\ compile the offset here
+;
+
+: AGAIN IMMEDIATE
+        \' BRANCH ,     \\ compile BRANCH
+        HERE @ -        \\ calculate the offset back
+        ,               \\ compile the offset here
+;
+
+: WHILE IMMEDIATE
+        \' 0BRANCH ,    \\ compile 0BRANCH
+        HERE @          \\ save location of the offset2 on the stack
+        0 ,             \\ compile a dummy offset2
+;
+
+: REPEAT IMMEDIATE
+        \' BRANCH ,     \\ compile BRANCH
+        SWAP            \\ get the original offset (from BEGIN)
+        HERE @ - ,      \\ and compile it after BRANCH
+        DUP
+        HERE @ SWAP -   \\ calculate the offset2
+        SWAP !          \\ and back-fill it in the original location
+;
+
+: UNLESS IMMEDIATE
+        \' NOT ,        \\ compile NOT (to reverse the test)
+        [COMPILE] IF    \\ continue by calling the normal IF
+;
+
+: \( IMMEDIATE
+        1               \\ allowed nested parens by keeping track of depth
+        BEGIN
+                KEY             \\ read next character
+                DUP '\(' = IF    \\ open paren?
+                        DROP            \\ drop the open paren
+                        1+              \\ depth increases
+                ELSE
+                        '\)' = IF        \\ close paren?
+                                1-              \\ depth decreases
+                        THEN
+                THEN
+        DUP 0= UNTIL            \\ continue until we reach matching close paren, depth 0
+        DROP            \\ drop the depth counter
+;
+
+: NIP ( x y -- y ) SWAP DROP ;
+: TUCK ( x y -- y x y ) SWAP OVER ;
+: PICK ( x_u ... x_1 x_0 u -- x_u ... x_1 x_0 x_u )
+        1+              ( add one because of 'u' on the stack )
+        DSP@ +          ( add to the stack pointer )
+        @               ( and fetch )
+;
+
+: SPACES        ( n -- )
+        BEGIN
+                DUP 0>          ( while n > 0 )
+        WHILE
+                SPACE           ( print a space )
+                1-              ( until we count down to 0 )
+        REPEAT
+        DROP
+;
+
+: DECIMAL ( -- ) 10 BASE ! ;
+: HEX ( -- ) 16 BASE ! ;
+
+: U.            ( u -- )
+        BASE @ /MOD     ( width rem quot )
+        ?DUP IF                 ( if quotient <> 0 then )
+                RECURSE         ( print the quotient )
+        THEN
+
+        ( print the remainder )
+        DUP 10 < IF
+                '0'             ( decimal digits 0..9 )
+        ELSE
+                10 -            ( hex and beyond digits A..Z )
+                'A'
+        THEN
+        +
+        EMIT
+;
+
+: .S            ( -- )
+        DSP@            ( get current stack pointer )
+        BEGIN
+                DUP S0 @ <
+        WHILE
+                DUP @ U.        ( print the stack element )
+                SPACE
+                1+              ( move up )
+        REPEAT
+        DROP
+;
+
+: UWIDTH	( u -- width )
+	BASE @ /	( rem quot )
+	?DUP IF		( if quotient <> 0 then )
+		RECURSE 1+	( return 1+recursive call )
+	ELSE
+		1		( return 1 )
+	THEN
+;
+
+)
+
 label :text_end
