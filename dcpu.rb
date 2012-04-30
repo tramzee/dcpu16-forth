@@ -117,7 +117,7 @@ class Emit
     code.push %(dat #{name.length | opts[:flags]})
     code.push %(dat "#{name}")
     code.push %(:#{opts[:lab]})
-    code.push %(dat DOCOL)
+    code.push %(dat DOCOL_CODE)
     yield
     w exit_
     @last_lab = opts[:lab]

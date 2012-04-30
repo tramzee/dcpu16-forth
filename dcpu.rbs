@@ -7,7 +7,7 @@ set pc, :_start
 # i is the next forth instruction pointer
 # j is the forth return stack pointer
 
-label :DOCOL
+label :DOCOL_CODE
 begin
   sub j, 1
   set [j], i
@@ -633,7 +633,7 @@ end
 defword ':', :lab => 'COLON' do
   w word
   w create
-  w lit, docol, comma
+  w lit, :DOCOL_CODE, comma
   w latest, fetch, hidden
   w rbrac
 end
@@ -698,6 +698,7 @@ defcode '0BRANCH', 'ZBRANCH' do
 end
 
 defconst "R0", 0x7000, :lab => 'rz'
+defconst "DOCOL", :DOCOL_CODE
 
 defword 'quit' do
   w rz, rspstore
@@ -1191,6 +1192,24 @@ forth %(
                 HERE @ -        ( calculate the length )
                 HERE @          ( push the start address )
                 SWAP            ( addr len )
+        THEN
+;
+
+: .\" IMMEDIATE         ( -- )
+        STATE @ IF      ( compiling? )
+                [COMPILE] S\"   ( read the string, and compile LITSTRING, etc. )
+                \' TELL ,       ( compile the final TELL )
+        ELSE
+                ( In immediate mode, just read characters and print them until we get
+                  to the ending double quote. )
+                BEGIN
+                        KEY
+                        DUP '"' = IF
+                                DROP    ( drop the double quote character )
+                                EXIT    ( return from this function )
+                        THEN
+                        EMIT
+                AGAIN
         THEN
 ;
 
