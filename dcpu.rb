@@ -76,7 +76,7 @@ class Emit
 
   def forth(s)
     s.split(/\s*\n\s*/).each do |line|
-      line.gsub!(/\s{2,}/, ' ')
+      line.gsub!(/\s+/, ' ')
       dquote = '"'.ord.to_s
       line.gsub!(/"/, "\", #{dquote}, \"")
       code << %(dat "#{line}", #{KBD_CR})
