@@ -107,6 +107,11 @@ end
 label :interpret_word_buffer
 space(32)
 
+defcode 'EXECUTE' do
+  set z, pop
+  set pc, [z]
+end
+
 defcode 'NUMBER' do
   set a, pop                    # length
   set x, pop                    # pointer
@@ -699,6 +704,9 @@ end
 
 defconst "R0", 0x7000, :lab => 'rz'
 defconst "DOCOL", :DOCOL_CODE
+defconst "F_LENMASK", LENGTH_MASK
+defconst "F_HIDDENMASK", HIDDEN_MASK
+defconst "F_IMMEDMASK", IMMEDIATE_MASK
 
 defword 'quit' do
   w rz, rspstore
@@ -814,8 +822,13 @@ defsubr :_puts do
   set x, [sp + 0]
   set a, [x]
   jsr :_echo
-  sub [sp + 1], 1
-  add [sp + 0], 1
+  set a, [sp + 1]
+  sub a, 1
+  set [sp + 1], a
+  set a, [sp]
+  add a, 1
+  set [sp], a
+
   set pc, :_puts_loop
   label :_puts_finish
   add sp, 2                     # pop off temp storage
@@ -913,6 +926,8 @@ w :quit
 label :text_start
 
 forth %(
+: C@ @ 0xff00 AND ;
+
 : / /MOD SWAP DROP ;
 : MOD /MOD DROP ;
 
@@ -1254,6 +1269,69 @@ forth %(
 ;
 
 
+: ID.
+        1+              ( skip over the link pointer )
+        DUP @           ( get the flags/length byte )
+        F_LENMASK AND   ( mask out the flags - just want the length )
+
+        BEGIN
+                DUP 0>          ( length > 0? )
+        WHILE
+                SWAP 1+         ( addr len -- len addr+1 )
+                DUP @           ( len addr -- len addr char | get the next character)
+                EMIT            ( len addr char -- len addr | and print it)
+                SWAP 1-         ( len addr -- addr len-1    | subtract one from length )
+        REPEAT
+        2DROP           ( len addr -- )
+;
+
+: ?HIDDEN
+        1+              ( skip over the link pointer )
+        @               ( get the flags/length word )
+        F_HIDDEN AND    ( mask the F_HIDDEN flag and return it (as a truth value) )
+;
+: ?IMMEDIATE
+        1+              ( skip over the link pointer )
+        @               ( get the flags/length byte )
+        F_IMMED AND     ( mask the F_IMMED flag and return it (as a truth value) )
+;
+
+: :NONAME
+        0 0 CREATE      ( create a word with no name - we need a dictionary header because ; expects it )
+        HERE @          ( current HERE value is the address of the codeword, ie. the xt )
+        DOCOL ,         ( compile DOCOL (the codeword) )
+        ]               ( go into compile mode )
+;
+
+: [\'] IMMEDIATE
+        \' LIT ,                ( compile LIT )
+;
+
+: CFA>
+        LATEST @        ( start at LATEST dictionary entry )
+        BEGIN
+                ?DUP            ( while link pointer is not null )
+        WHILE
+                2DUP SWAP       ( cfa curr curr cfa )
+                < IF            ( current dictionary entry < cfa? )
+                        NIP             ( leave curr dictionary entry on the stack )
+                        EXIT
+                THEN
+                @               ( follow link pointer back )
+        REPEAT
+        DROP            ( restore stack )
+        0               ( sorry, nothing found )
+;
+
+: FORGET
+        WORD FIND       ( find the word, gets the dictionary entry address )
+        DUP @ LATEST !  ( set LATEST to point to the previous word )
+        HERE !          ( and store HERE with the dictionary address )
+;
+
+." Loaded" CR
+
 )
+
 
 label :text_end
