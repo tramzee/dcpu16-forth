@@ -64,7 +64,7 @@ class Emit
     opts[:saves].each do |reg|
       code << %(set push, #{reg})
     end
-    code << %(jsr #{name})
+    code << %(jsr #{e name})
     opts[:saves].reverse.each do |reg|
       code << %(set #{reg}, pop)
     end
@@ -99,6 +99,10 @@ class Emit
     set pc, pop
   end
 
+
+  def define(name, arg)
+    code.push %(\#define #{name} #{arg})
+  end
 
   def defword(name, *opts)
     if opts[0].is_a?(Hash) && opts.length == 1
@@ -170,7 +174,7 @@ class Emit
   end
 
   def emit
-    code.join("\n        ").gsub(/^\s*:/, ':').gsub(/(^\s*if.*\n)/, '\1  ')
+    code.join("\n        ").gsub(/^\s*([:\#])/, '\1').gsub(/(^\s*if.*\n)/, '\1  ')
   end
 
 end
