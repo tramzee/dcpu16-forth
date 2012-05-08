@@ -857,7 +857,7 @@ defsubr :_puts do
   ife [sp + 1], 0 do
     set pc, :_puts_finish
   end
-  set x, [sp + 0]
+  set x, [sp]
   set a, [x]
   jsr :_echo
   set a, [sp + 1]
