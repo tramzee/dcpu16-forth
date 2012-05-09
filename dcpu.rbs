@@ -1,11 +1,12 @@
 HW_KEYBOARD = 1
-HW_SCREEN = 2
 KBD_BS = 0x10
 
 set pc, :_start
 # z in the forth next instruction pointer
 # i is the next forth instruction pointer
 # j is the forth return stack pointer
+
+defvar 'HW_SCREEN', 2
 
 label :DOCOL_CODE
 begin
@@ -920,7 +921,8 @@ begin
 end
 
 label :bootstrap_url
-dat '"file:////ubuntu/tramsey/proj/dcpu/bootstrap.f"', 0
+# dat '"file:////ubuntu/tramsey/proj/dcpu/bootstrap.f"', 0
+dat '"file:///c|/Users/Dave/Desktop/DCPU Code/dcpu16-forth/bootstrap.f"', 0
 define web_io, 0xa000
 
 defsubr :_boostrap_forth do
@@ -964,7 +966,7 @@ end
 defsubr :_setup_screen do
   set a, 0
   set b, [var_NEXTOUT]
-  hwi HW_SCREEN
+  hwi [var_HW_SCREEN]
 end
 
 
