@@ -8,7 +8,7 @@ set pc, :_start
 
 # Display
 BUFR_SCREEN = 0x8000
-defvar 'HW_SCREEN', 2
+defvar 'HW_SCREEN', 0xFFFF
 
 label :DOCOL_CODE
 begin
@@ -966,9 +966,25 @@ defsubr :_setup_kbd do
 end
 
 defsubr :_setup_screen do
-  set a, 0
-  set b, BUFR_SCREEN
-  hwi [var_HW_SCREEN]
+label :_setup_screen_loop
+    add [var_HW_SCREEN], 1
+    hwq [var_HW_SCREEN]
+    ife a, 0xf615
+    ife b, 0x7349
+    ife c, 0x1802
+    ife x, 0x8b36         # NYA_ELEKTRISKA
+    ife y, 0x1c6c
+        set pc, _setup_screen_hdw_found
+    set pc, _setup_screen_loop
+label :_setup_screen_hdw_found
+# map screen
+    set a, 0
+    set b, [var_NEXTOUT]  # top of display viewport
+    hwi [var_HW_SCREEN]
+# map default font
+    set a, 1
+    set b, 0
+    hwi [var_HW_SCREEN]
 end
 
 
