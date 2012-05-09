@@ -22,9 +22,36 @@ label :next
 begin
   set z, [i]
   add i, 1
-  set pc, [z]
+  label :next_jump
+  add pc, 2
 end
 
+label :statement_debug
+add pc, 2
+label :statement_no_debug
+set pc, [z]
+
+label :_debugger
+begin
+  ife [var_DEBUG], 0
+  set pc, [z]
+  set pc, [z]                   # execute here if we are debuging
+end
+
+defcode '_DEBUG' do
+  jsr :_debug_unset
+  set a, pop
+  ifn a, 0
+  jsr :_debug_set
+end
+
+defsubr '_debug_set' do
+  set [:next_jump], [:statement_debug]
+end
+
+defsubr '_debug_unset' do
+  set [:next_jump], [:statement_no_debug]
+end
 
 defcode 'd' do
   set a, a
@@ -98,7 +125,7 @@ defcode 'INTERPRET' do
   end
 
   set z, [interpret_vars + 3]   # otherwise execute the codeword (just like next)
-  set pc, [z]
+  set pc, :next_jump
 
   label :interpret_push_lit     # if it's a literal just push it and go to next
   set push, b
@@ -112,7 +139,7 @@ space(32)
 
 defcode 'EXECUTE' do
   set z, pop
-  set pc, [z]
+  set pc, :next_jump
 end
 
 defcode 'NUMBER' do
@@ -548,7 +575,7 @@ defvar "BASE", 10
 defvar 'STATE', 0
 defvar "S0"
 defvar "HERE", :text_end
-
+defvar 'DEBUG', 0
 
 defcode "DSP@", 'DSPFETCH' do
   set a, sp
@@ -833,7 +860,7 @@ defsubr :_puts do
   ife [sp + 1], 0 do
     set pc, :_puts_finish
   end
-  set x, [sp + 0]
+  set x, [sp]
   set a, [x]
   jsr :_echo
   set a, [sp + 1]
