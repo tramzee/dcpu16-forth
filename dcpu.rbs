@@ -6,6 +6,8 @@ set pc, :_start
 # i is the next forth instruction pointer
 # j is the forth return stack pointer
 
+# Display
+BUFR_SCREEN = 0x8000
 defvar 'HW_SCREEN', 2
 
 label :DOCOL_CODE
@@ -881,7 +883,7 @@ defsubr '_echo' do
 end
 
 defsubr '_scroll' do
-  set x, 0x8000
+  set x, BUFR_SCREEN
   label :_scroll_loop1
   set [x], [x + 32]
   add x, 1
@@ -897,7 +899,7 @@ defsubr '_scroll' do
 end
 
 defvar 'nextchar', 0x9000
-defvar 'nextout', 0x8000
+defvar 'nextout', BUFR_SCREEN
 
 defvar 'getc_buffer_limit', :text_end
 defvar 'getc_buffer_nextchar', :text_start
@@ -965,7 +967,7 @@ end
 
 defsubr :_setup_screen do
   set a, 0
-  set b, [var_NEXTOUT]
+  set b, BUFR_SCREEN
   hwi [var_HW_SCREEN]
 end
 
