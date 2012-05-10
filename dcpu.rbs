@@ -1,14 +1,17 @@
-HW_KEYBOARD = 1
 KBD_BS = 0x10
 
 set pc, :_start
 # z in the forth next instruction pointer
 # i is the next forth instruction pointer
 # j is the forth return stack pointer
+# all routines must preserve the above values
 
 # Display
 BUFR_SCREEN = 0x8000
 defvar 'HW_SCREEN', 0xFFFF
+
+# Keyboard
+defvar 'HW_KEYBOARD', 0xFFFF
 
 label :DOCOL_CODE
 begin
@@ -827,7 +830,7 @@ end
 # munges c, x
 defsubr :_key do
   set a, 1
-  hwi HW_KEYBOARD
+  hwi [var_HW_KEYBOARD]
   set a, c
 end
 
@@ -988,8 +991,19 @@ end
 
 
 defsubr :_setup_kbd do
+label :_setup_kbd_loop
+  add [var_HW_KEYBOARD], 1
+  hwq [var_HW_KEYBOARD]
+  ife a, 0x7406
+  ife b, 0x30cf
+  ife c, 0x0001
+#    ife x, 0xXXXX  ; generic
+#    ife y, 0xXXXX
+    set pc, _setup_kbd_hdw_found
+  set pc, _setup_kbd_loop
+label :_setup_kbd_hdw_found
   set a, 0
-  hwi HW_KEYBOARD
+  hwi [var_HW_KEYBOARD]
 end
 
 defsubr :_setup_screen do
