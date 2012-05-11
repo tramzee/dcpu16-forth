@@ -8,7 +8,8 @@ set pc, :_start
 
 # Display
 BUFR_SCREEN = 0x8000
-defvar 'HW_SCREEN', 0xFFFF
+BUFR_DISK = 0xb000
+DISK_BUF_LEN = 512
 
 label :DOCOL_CODE
 begin
@@ -571,11 +572,29 @@ defcode '-!', 'SUBSTORE' do
   sub [x], a
 end
 
+defconst "R0", 0x7000, :lab => 'rz'
+defconst "DOCOL", :DOCOL_CODE
+defconst "F_LENMASK", LENGTH_MASK
+defconst "F_HIDDENMASK", HIDDEN_MASK
+defconst "F_IMMEDMASK", IMMEDIATE_MASK
+defconst "DISKBUFLEN", DISK_BUF_LEN
+
+defvar 'HW_SCREEN', 0xFFFF
+
 defvar "BASE", 10
 defvar 'STATE', 0
 defvar "S0"
 defvar "HERE", :text_end
 defvar 'DEBUG', 0
+defvar 'STDIN', :_web_getc
+defvar 'nextout', BUFR_SCREEN
+defvar 'getc_buffer_limit', :text_end
+defvar 'getc_buffer_nextchar', :text_start
+
+defvar 'DISKBUF', BUFR_DISK
+defvar 'DISK_NEXTCHAR', BUFR_DISK + DISK_BUF_LEN
+defvar 'DISK_NEXTSECTOR', 0
+
 
 defcode "DSP@", 'DSPFETCH' do
   set a, sp
@@ -741,12 +760,6 @@ defcode '0BRANCH', 'ZBRANCH' do
   add i, b
 end
 
-defconst "R0", 0x7000, :lab => 'rz'
-defconst "DOCOL", :DOCOL_CODE
-defconst "F_LENMASK", LENGTH_MASK
-defconst "F_HIDDENMASK", HIDDEN_MASK
-defconst "F_IMMEDMASK", IMMEDIATE_MASK
-
 defword 'quit' do
   w rz, rspstore
   w interpret
@@ -779,8 +792,6 @@ defsubr :_ram_test do
   jsr :_getc
   set pc, :_ram_test
 end
-
-defvar 'STDIN', :_web_getc
 
 defsubr :_getc, :saves => [y] do
   ifg [:var_GETC_BUFFER_LIMIT], [:var_GETC_BUFFER_NEXTCHAR]
@@ -925,12 +936,6 @@ defsubr '_scroll' do
   set x, 0x8160
 end
 
-defvar 'nextchar', 0x9000
-defvar 'nextout', BUFR_SCREEN
-
-defvar 'getc_buffer_limit', :text_end
-defvar 'getc_buffer_nextchar', :text_start
-
 label :_getc_buffer
 space(256)
 
@@ -955,9 +960,7 @@ dat '"file:///c|/Users/Dave/Desktop/DCPU Code/dcpu16-forth/bootstrap.f"', 0
 define web_io, 0xa000
 
 defsubr :_boostrap_forth do
-  set x, bootstrap_url
-  jsr :_request_url
-  set [var_STDIN], :_web_getc
+  jsr :_disk_read
 end
 
 label :_stdin_finish
@@ -973,6 +976,47 @@ defsubr :_request_url do
   ifn a, 0
   set pc, :_request_url
 end
+
+defcode 'LOADDISK' do
+  jsr :_disk_read
+end
+
+defsubr :_disk_read do
+  set [var_DISK_NEXTCHAR], [var_DISKBUF]
+  add [var_DISK_NEXTCHAR], DISK_BUF_LEN
+  set [var_DISK_NEXTSECTOR], 0
+  set [var_STDIN], :_disk_getc
+end
+
+defsubr :_disk_getc do
+  set c, [var_DISK_NEXTCHAR]
+  set b, [var_DISKBUF]
+  add b, DISK_BUF_LEN
+  ife c, b
+  jsr :_disk_read_sector
+  set a, [c]
+  add [var_DISK_NEXTCHAR], 1
+  ife a, 0
+  set pc, :_stdin_finish
+  ife a, -"\n"
+  set a, KBD_CR
+  ife a, -"\r"
+  set a, KBD_CR
+
+end
+
+defsubr :_disk_read_sector do
+  set a, 0x10
+  set b, [var_DISK_NEXTSECTOR]
+  set c, 1
+  set x, [var_DISKBUF]
+  hwi 3
+  add [var_DISK_NEXTSECTOR], 1
+  set c, [var_DISKBUF]
+  set [var_DISK_NEXTCHAR], c
+end
+
+
 
 defsubr :_web_getc do
   set a, [web_io]
