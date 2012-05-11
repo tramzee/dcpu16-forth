@@ -179,7 +179,72 @@ class Emit
 
 end
 
-emit = Emit.new
-emit.instance_eval($stdin.read)
-puts emit.emit
+require 'base64'
+require 'zlib'
+
+def makedisk(fname, disk_out)
+
+  header_template = %(BIEF/0.1
+media-type: AuthenticHIT
+words-per-sector: 512
+sectors-per-track: 18
+tracks: 80
+access: Read-Write
+type: Floppy
+disk-name: %s
+Compression: Zlib
+Encoding: Base64
+Payload-Length: %s
+
+%s)
+  deflate = Zlib::Deflate.new
+
+  total_bytes = 512 * 2 * 18 * 80
+  disk_name = File.basename(disk_out)
+  disk_name.gsub!(/\..*?$/, '')
+
+  data = File.open(fname) { |f| f.read }
+
+  data.each_char do |c|
+    deflate << "\x00"
+    deflate << c
+    total_bytes -= 2
+  end
+
+  while total_bytes > 0
+    deflate << "\x00"
+    total_bytes -= 1
+  end
+
+  disk_bytes = deflate.finish
+  deflate.close
+
+  b64_bytes = Base64.encode64(disk_bytes).chomp
+
+  File.open(disk_out, "w") { |f| f.print(header_template % [disk_name, b64_bytes.length, b64_bytes]) }
+end
+
+dcpu_dir = File.dirname(__FILE__)
+devkit_dir = ARGV.shift || dcpu_dir
+unless Dir.exists?(devkit_dir)
+  ARGV.unshift(devkit_dir)
+  devkit_dir = dcpu_dir
+end
+
+Dir.glob("#{dcpu_dir}/*.rbs").each do |fname|
+  basename = File.basename(fname, ".rbs")
+  emit = Emit.new
+  File.open(fname) {|f| emit.instance_eval(f.read) }
+  File.open(File.join(devkit_dir, basename + ".10c"), "w") { |f| f.print emit.emit }
+end
+
+ARGV.each do |in_disk_file|
+  out_disk_file = File.basename(in_disk_file)
+  out_disk_file.gsub!(/\..*?$/, '')
+  makedisk(in_disk_file, File.join(devkit_dir, out_disk_file + ".10cdisk"))
+end
+
+# emit = Emit.new
+# emit.instance_eval($stdin.read)
+# puts emit.emit
 
