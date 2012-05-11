@@ -12,5 +12,5 @@ Much of this is what could be called a pre-assembler.  That is I have written my
 To convert the .rbs file to an assembly file run the command
 
 ````
-ruby dcpu.rb <dcpu.rbs > dcpu.asm
+ruby dcpu.rb <dcpu.rbs > dcpu.dasm16
 ````
