@@ -1,6 +1,87 @@
 require 'rubygems'
 require 'pp'
+require 'optparse'
 
+def help
+  ARGV.unshift '--help'
+  parse_options
+end
+
+def convert
+  puts convert_internal($stdin.read)
+end
+
+def convert_internal(string)
+  emit = Emit.new
+  emit.instance_eval(string)
+  emit.emit
+end
+
+def disk
+  parse_options
+  print makedisk($stdin.read, @options[:disk_name])
+end
+
+def test
+  puts 'testing...'
+end
+
+def parse_options
+  @options = {}
+  @options[:disk_files] = []
+  @options[:rbs_files] = []
+  @options[:disk_name] = 'disk1'
+  @options[:devkit_dir] = '.'
+  OptionParser.new do |opts|
+    opts.banner = "Usage: ruby -r ./dcpu command -- [options]"
+
+    opts.separator ""
+    opts.separator %w(Commands: devkit disk help convert).join("\n\t")
+
+    opts.separator ""
+    opts.separator "-- Specific Options --"
+    opts.separator ""
+    opts.separator "devkit command options:"
+
+    opts.on("--dest-dir DIR", "output files to DIR (devkit only)") do |dir|
+      @options[:dir] = dir
+    end
+
+    opts.on("--disk-files FILES", Array,
+            "FILES (comma sep list) are turned into .10cdisk files.",
+            "Can be specified any number of times (devkit only)") do |files|
+      @options[:disk_files].push(*files)
+    end
+
+    opts.on("--rbs-files FILES", Array, "FILE (comma sep list) to be turned into .10c files") do |files|
+      @options[:rbs_files].push(*files)
+    end
+
+    opts.separator ""
+    opts.separator "disk command options:"
+
+    opts.on("--disk_name NAME", "name of the disk to make") do |name|
+      @options[:disk_name] = name
+    end
+
+    opts.separator ""
+    opts.separator "-- Common Options --"
+
+    opts.on("--[no-]exec", "Do not execute, just show what would be done") do |v|
+      @options[:exec] = v
+    end
+
+    opts.on("-v", "--[no-]verbose", "Run verbosely") do |v|
+      @options[:verbose] = v
+    end
+
+    opts.on_tail("-h", "--help", "Show this message") do
+      puts opts
+      exit
+    end
+
+  end.parse!
+end
 
 class EString < String
   def +(s)
@@ -182,7 +263,7 @@ end
 require 'base64'
 require 'zlib'
 
-def makedisk(fname, disk_out)
+def makedisk(string, disk_name = 'disk1')
 
   header_template = %(BIEF/0.1
 media-type: AuthenticHIT
@@ -200,12 +281,8 @@ Payload-Length: %s
   deflate = Zlib::Deflate.new
 
   total_bytes = 512 * 2 * 18 * 80
-  disk_name = File.basename(disk_out)
-  disk_name.gsub!(/\..*?$/, '')
 
-  data = File.open(fname) { |f| f.read }
-
-  data.each_char do |c|
+  string.each_char do |c|
     deflate << "\x00"
     deflate << c
     total_bytes -= 2
@@ -220,31 +297,28 @@ Payload-Length: %s
   deflate.close
 
   b64_bytes = Base64.encode64(disk_bytes).chomp
-
-  File.open(disk_out, "w") { |f| f.print(header_template % [disk_name, b64_bytes.length, b64_bytes]) }
+  header_template % [disk_name, b64_bytes.length, b64_bytes]
 end
 
-dcpu_dir = File.dirname(__FILE__)
-devkit_dir = ARGV.shift || dcpu_dir
-unless Dir.exists?(devkit_dir)
-  ARGV.unshift(devkit_dir)
-  devkit_dir = dcpu_dir
+def devkit
+  parse_options
+  dcpu_dir = File.dirname(__FILE__)
+
+  @options[:rbs_files].each do |fname|
+    basename = File.basename(fname, ".rbs")
+    emit = Emit.new
+    File.open(fname) {|f| emit.instance_eval(f.read) }
+    File.open(File.join(@options[:devkit_dir], basename + ".10c"), "w") { |f| f.print emit.emit }
+  end
+
+  @options[:disk_files].each do |in_disk_file|
+    out_disk_file = File.basename(in_disk_file)
+    out_disk_file.gsub!(/\..*?$/, '')
+    File.open(File.join(@options[:devkit_dir], out_disk_file + ".10cdisk"), "w") do |ofile|
+      ofile.print makedisk(File.open(in_disk_file) {|f| f.read}, out_disk_file)
+    end
+  end
 end
 
-Dir.glob("#{dcpu_dir}/*.rbs").each do |fname|
-  basename = File.basename(fname, ".rbs")
-  emit = Emit.new
-  File.open(fname) {|f| emit.instance_eval(f.read) }
-  File.open(File.join(devkit_dir, basename + ".10c"), "w") { |f| f.print emit.emit }
-end
 
-ARGV.each do |in_disk_file|
-  out_disk_file = File.basename(in_disk_file)
-  out_disk_file.gsub!(/\..*?$/, '')
-  makedisk(in_disk_file, File.join(devkit_dir, out_disk_file + ".10cdisk"))
-end
-
-# emit = Emit.new
-# emit.instance_eval($stdin.read)
-# puts emit.emit
 
