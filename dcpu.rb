@@ -33,7 +33,7 @@ def parse_options
   @options[:disk_name] = 'disk1'
   @options[:devkit_dir] = '.'
   OptionParser.new do |opts|
-    opts.banner = "Usage: ruby -r ./dcpu command -- [options]"
+    opts.banner = "Usage: ruby -r ./dcpu -e command -- [options]"
 
     opts.separator ""
     opts.separator %w(Commands: devkit disk help convert).join("\n\t")
