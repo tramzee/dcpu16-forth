@@ -1,13 +1,23 @@
-HW_KEYBOARD = 1
-KBD_BS = 0x10
 
 set pc, :_start
 # z in the forth next instruction pointer
 # i is the next forth instruction pointer
 # j is the forth return stack pointer
+# all routines must preserve the above values
 
 # Display
-BUFR_SCREEN = 0x8000
+SCREEN_BUFR = 0x8000
+SCREEN_LINES = 24
+defvar 'HW_SCREEN', 0xFFFF
+defvar 'SCREEN_OFFSET', 0
+
+# Keyboard
+KBD_BS = 0x10
+KBD_UP = 0x7D
+KBD_DOWN = 0x7B
+defvar 'HW_KEYBOARD', 0xFFFF
+
+# Disk
 BUFR_DISK = 0xb000
 DISK_BUF_LEN = 512
 
@@ -587,7 +597,7 @@ defvar "S0"
 defvar "HERE", :text_end
 defvar 'DEBUG', 0
 defvar 'STDIN', :_web_getc
-defvar 'nextout', BUFR_SCREEN
+defvar 'nextout', SCREEN_BUFR + (32 * (SCREEN_LINES - 12)) # cursor position in video RAM
 defvar 'getc_buffer_limit', :text_end
 defvar 'getc_buffer_nextchar', :text_start
 
@@ -813,15 +823,16 @@ end
 # munges a, b, c, x, y
 defsubr :_read_line do
   set b, 0                      # set the number of characters read into buffer
+
   label :_read_line_next
   jsr :_key                     # get (non-blocking) character
   ife a, 0
-  set pc, :_read_line_next      # if none loop
+    set pc, :_read_line_next    # if none loop
   jsr :_echo                    # echo it to the screen
   ifn a, KBD_BS                 # if it is a backspace
-  set pc, :_read_line_skip_bs
+    set pc, :_read_line_skip_bs
   ife b, 0                      # and we have some characters in the buffer
-  set pc, :_read_line_next
+    set pc, :_read_line_next
   sub b, 1                      # backup the buffer
   sub y, 1
   set pc, :_read_line_next
@@ -835,11 +846,32 @@ defsubr :_read_line do
 end
 
 # 0 or <next-char>  => a
+# handles viewport scrolling
 # munges c, x
 defsubr :_key do
+label :_key_start
   set a, 1
-  hwi HW_KEYBOARD
+  hwi [var_HW_KEYBOARD]
   set a, c
+  ife a, KBD_UP                 # scroll up
+    set pc, :_key_scrollup
+  ife a, KBD_DOWN               # scroll down
+    set pc, :_key_scrolldown
+  set pc, :_key_end
+
+  label :_key_scrollup
+  set x, [var_SCREEN_OFFSET]
+  add x, 1
+  jsr :_screen_offset
+  set pc, :_key_start
+
+  label :_key_scrolldown
+  set x, [var_SCREEN_OFFSET]
+  sub x, 1
+  jsr :_screen_offset
+  set pc, :_key_start
+
+label :_key_end
 end
 
 defsubr _upcase do
@@ -913,27 +945,52 @@ defsubr '_echo' do
   set [x], a
   add x, 1
   label :_echo_finish
-  ifg x, 0x817f
+  ifg x, SCREEN_BUFR + (32 * SCREEN_LINES) - 1
   jsr :_scroll
   and_ a, 0x7f
   set [var_NEXTOUT], x
-  set [x], 0x809c
+  set [x], 0x809c               # cursor character
+  set x, 0
+  jsr :_screen_offset           # set the screen offset to 0 so we can see the character
 end
 
 defsubr '_scroll' do
-  set x, BUFR_SCREEN
+  set x, SCREEN_BUFR
   label :_scroll_loop1
   set [x], [x + 32]
   add x, 1
-  ifg 0x8160, x
-  set pc, :_scroll_loop1
+  ifg SCREEN_BUFR + (32 * (SCREEN_LINES - 1)), x
+    set pc, :_scroll_loop1
 
   label :_scroll_loop2
   set [x], 0
   add x, 1
-  ifg 0x8180, x
-  set pc, :_scroll_loop2
-  set x, 0x8160
+  ifg SCREEN_BUFR + (32 * SCREEN_LINES), x
+    set pc, :_scroll_loop2
+  set x, SCREEN_BUFR + (32 * (SCREEN_LINES - 1))
+end
+
+# x: offset (0 to display_lines-12)
+# changes the offset of the viewport in the buffer
+# modifies hardware, if needed
+defsubr '_screen_offset' do
+  ife x, [var_SCREEN_OFFSET]
+    set pc, :_screen_offset_end   # fast return as this is called per keystroke
+  ifg x, SCREEN_LINES - 12        # don't display past the buffer
+    set pc, _screen_offset_end
+  set push, b
+  # set beginning of viewport (video-mapped RAM) to SCREEN_BUFR + (32 * (SCREEN_LINES - 12 - offset))
+  set [var_SCREEN_OFFSET], x
+  set b, SCREEN_LINES - 12
+  sub b, x                # desired offset
+  shl b, 5                # multiply by 32 (words per line)
+  add b, SCREEN_BUFR
+  set push, a
+  set a, 0                # map screen
+  hwi [var_HW_SCREEN]
+  set a, pop
+  set b, pop
+label :_screen_offset_end
 end
 
 label :_getc_buffer
@@ -1032,8 +1089,19 @@ end
 
 
 defsubr :_setup_kbd do
+label :_setup_kbd_loop
+  add [var_HW_KEYBOARD], 1
+  hwq [var_HW_KEYBOARD]
+  ife a, 0x7406
+  ife b, 0x30cf
+  ife c, 0x0001
+#    ife x, 0xXXXX  ; generic
+#    ife y, 0xXXXX
+    set pc, _setup_kbd_hdw_found
+  set pc, _setup_kbd_loop
+label :_setup_kbd_hdw_found
   set a, 0
-  hwi HW_KEYBOARD
+  hwi [var_HW_KEYBOARD]
 end
 
 defsubr :_setup_screen do
