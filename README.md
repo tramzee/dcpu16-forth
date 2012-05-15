@@ -12,7 +12,7 @@ Much of this is what could be called a pre-assembler.  That is I have written my
 To make things easy when using [DevKit](http://0x10c-devkit.com/) I have created another script that, when run, will convert all the .rbs files in the current directory to .10c files in the destination directory. In addition it will convert any files listed in the `--disk-files` option into .10cdisk files.  All of these files are created in the devkit-dir (specified with the `--devkit-dir` option). Run the command
 
 ````
-ruby -r ./dcpu devkit -- --devkit-dir=<dest-dir> --rbs-files dcpu.rbs --disk-files bootstrap.f
+ruby -r ./dcpu -e devkit -- --devkit-dir=<dest-dir> --rbs-files dcpu.rbs --disk-files bootstrap.f
 ````
 
 In addition to the `devkit` command there is also a `convert` command which will take an .rbs stdin and output devkit assembly on stdout.  A typical way to run this is:
