@@ -43,8 +43,8 @@ def parse_options
     opts.separator ""
     opts.separator "devkit command options:"
 
-    opts.on("--dest-dir DIR", "output files to DIR (devkit only)") do |dir|
-      @options[:dir] = dir
+    opts.on("--devkit-dir DIR", "output files to DIR (devkit only)") do |dir|
+      @options[:devkit_dir] = dir
     end
 
     opts.on("--disk-files FILES", Array,
@@ -314,7 +314,7 @@ def devkit
   @options[:disk_files].each do |in_disk_file|
     out_disk_file = File.basename(in_disk_file)
     out_disk_file.gsub!(/\..*?$/, '')
-    File.open(File.join(@options[:devkit_dir], out_disk_file + ".10cdisk"), "w") do |ofile|
+    File.open(File.join(@options[:devkit_dir], out_disk_file + ".10cdisk"), "wb") do |ofile|
       ofile.print makedisk(File.open(in_disk_file) {|f| f.read}, out_disk_file)
     end
   end

@@ -513,38 +513,4 @@
     CR
 ;
 
-
-: AA
-    3 SPACES ." in AA before THROW" CR
-    PRINT-STACK-TRACE
-    1- THROW 42
-    3 SPACES ." in AA after THROW" CR
-
-;
-
-: BB
-    2 SPACES ." in BB before AA" CR
-    AA
-    2 SPACES ." in BB after AA" CR
-;
-
-: CC
-    SPACE ." in CC before BB" CR
-    ['] BB CATCH
-    SPACE ." in CC after BB" CR
-    IF THROW THEN
-;
-
-: DD
-    ." in DD before CC" CR
-    CC
-    ." in DD after CC" CR
-;
-
-: EE ['] DD CATCH
-    IF
-        ." caught " . CR
-    THEN
-;
-
 ." Loaded" CR
